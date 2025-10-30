@@ -37,6 +37,7 @@ import { useMe } from "@/contexts/AuthContext";
 import { BuyAssetDialog } from "@/components/buy-asset-dialog";
 import { SellPositionDialog } from "@/components/sell-position-dialog";
 import { useState } from "react";
+import currency from "currency.js";
 
 const COLORS = {
   wallet: "#3b82f6",
@@ -228,11 +229,7 @@ export default function Home() {
             <div className="space-y-6">
               <div>
                 <div className="text-4xl font-bold mb-2">
-                  $
-                  {totalPortfolio.toLocaleString(undefined, {
-                    minimumFractionDigits: 2,
-                    maximumFractionDigits: 2,
-                  })}
+                  {currency(totalPortfolio).format()}
                 </div>
                 <p className="text-sm text-muted-foreground">
                   Total portfolio value
@@ -256,7 +253,7 @@ export default function Home() {
                   </div>
                   <div className="text-right">
                     <p className="font-semibold">
-                      ${currentWalletBalance.toLocaleString()}
+                      {currency(currentWalletBalance).format()}
                     </p>
                   </div>
                 </div>
@@ -277,7 +274,7 @@ export default function Home() {
                   </div>
                   <div className="text-right">
                     <p className="font-semibold">
-                      ${currentBrokerageValue.toLocaleString()}
+                      {currency(currentBrokerageValue).format()}
                     </p>
                   </div>
                 </div>
@@ -302,9 +299,7 @@ export default function Home() {
                       <Cell fill={COLORS.brokerage} />
                     </Pie>
                     <Tooltip
-                      formatter={(value: number) =>
-                        `$${value.toLocaleString()}`
-                      }
+                      formatter={(value: number) => [currency(value).format()]}
                     />
                   </PieChart>
                 </ResponsiveContainer>
@@ -351,17 +346,23 @@ export default function Home() {
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold mb-6">
-              ${currentWalletBalance.toLocaleString()}
+              {currency(currentWalletBalance).format()}
             </div>
             {walletBalances.length > 0 ? (
               <ResponsiveContainer width="100%" height={200}>
                 <LineChart data={walletBalances}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                   <XAxis
-                    dataKey="date"
+                    dataKey="timestamp"
                     tickLine={false}
                     axisLine={false}
                     tick={{ fontSize: 12 }}
+                    tickFormatter={(timestamp) =>
+                      new Date(timestamp).toLocaleDateString("en-US", {
+                        month: "short",
+                        day: "numeric",
+                      })
+                    }
                   />
                   <YAxis
                     tickLine={false}
@@ -374,6 +375,18 @@ export default function Home() {
                       border: "1px solid #e5e7eb",
                       borderRadius: "8px",
                     }}
+                    formatter={(value: number) => [
+                      currency(value).format(),
+                      "Balance",
+                    ]}
+                    labelFormatter={(timestamp) =>
+                      new Date(timestamp).toLocaleDateString("en-US", {
+                        month: "short",
+                        day: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })
+                    }
                   />
                   <Line
                     type="monotone"
@@ -423,17 +436,23 @@ export default function Home() {
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold mb-6">
-              ${currentBrokerageValue.toLocaleString()}
+              {currency(currentBrokerageValue).format()}
             </div>
             {brokerageValues.length > 0 ? (
               <ResponsiveContainer width="100%" height={200}>
                 <LineChart data={brokerageValues}>
                   <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
                   <XAxis
-                    dataKey="date"
+                    dataKey="timestamp"
                     tickLine={false}
                     axisLine={false}
                     tick={{ fontSize: 12 }}
+                    tickFormatter={(timestamp) =>
+                      new Date(timestamp).toLocaleDateString("en-US", {
+                        month: "short",
+                        day: "numeric",
+                      })
+                    }
                   />
                   <YAxis
                     tickLine={false}
@@ -446,6 +465,18 @@ export default function Home() {
                       border: "1px solid #e5e7eb",
                       borderRadius: "8px",
                     }}
+                    formatter={(value: number) => [
+                      currency(value).format(),
+                      "Value",
+                    ]}
+                    labelFormatter={(timestamp) =>
+                      new Date(timestamp).toLocaleDateString("en-US", {
+                        month: "short",
+                        day: "numeric",
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })
+                    }
                   />
                   <Line
                     type="monotone"
@@ -518,10 +549,10 @@ export default function Home() {
                         </TableCell>
                         <TableCell className="text-right">{p.shares}</TableCell>
                         <TableCell className="text-right text-muted-foreground">
-                          ${p.avgPrice.toFixed(2)}
+                          {currency(p.avgPrice).format()}
                         </TableCell>
                         <TableCell className="text-right font-medium">
-                          ${p.currentPrice.toFixed(2)}
+                          {currency(p.currentPrice).format()}
                         </TableCell>
                         <TableCell className="text-right">
                           <div
@@ -530,7 +561,8 @@ export default function Home() {
                             }`}
                           >
                             <span className="font-semibold">
-                              {isProfitable ? "+" : ""}${pnl.toFixed(2)}
+                              {isProfitable ? "+" : ""}
+                              {currency(pnl).format()}
                             </span>
                             <span className="text-xs">
                               {isProfitable ? "+" : ""}

@@ -1,6 +1,24 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { z } from "zod";
+
+const buyAssetSchema = z.object({
+  symbol: z
+    .string()
+    .min(1, "Symbol is required")
+    .max(10, "Symbol must be 10 characters or less")
+    .regex(/^[A-Z]+$/, "Symbol must contain only uppercase letters"),
+  name: z.string().min(1, "Name is required"),
+  price: z
+    .number()
+    .positive("Price must be positive")
+    .finite("Price must be a valid number"),
+  shares: z
+    .number()
+    .int("Shares must be a whole number")
+    .positive("Shares must be positive"),
+});
 
 export async function POST(req: Request) {
   const user = await getCurrentUser(req);
@@ -10,18 +28,22 @@ export async function POST(req: Request) {
   }
 
   try {
-    const { symbol, name, price, shares } = await req.json();
+    const body = await req.json();
 
-    if (!symbol || !name || !price || !shares || shares <= 0) {
-      return NextResponse.json({ error: "Invalid input" }, { status: 400 });
-    }
+    // Validate with Zod
+    const validation = buyAssetSchema.safeParse(body);
 
-    if (!Number.isInteger(shares)) {
+    if (!validation.success) {
       return NextResponse.json(
-        { error: "Shares must be a whole number" },
+        {
+          error: "Validation failed",
+          details: validation.error.flatten().fieldErrors,
+        },
         { status: 400 }
       );
     }
+
+    const { symbol, name, price, shares } = validation.data;
 
     const totalCost = price * shares;
 
@@ -116,7 +138,9 @@ export async function POST(req: Request) {
         amount: totalCost,
         from: "WALLET",
         to: "BROKERAGE",
-        description: `Bought ${shares} shares of ${symbol} at $${price.toFixed(2)} per share`,
+        description: `Bought ${shares} shares of ${symbol} at $${price.toFixed(
+          2
+        )} per share`,
       },
     });
 

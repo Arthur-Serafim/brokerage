@@ -12,7 +12,7 @@ interface Position {
   currentPrice: number;
 }
 
-interface WalletBalance {
+interface Balance {
   id: string;
   date: string;
   balance: number;
@@ -54,17 +54,15 @@ export function useBrokerage() {
       });
 
       if (!res.ok) {
-        throw new Error("Failed to fetch wallet balances");
+        throw new Error("Failed to fetch balances");
       }
 
-      const balances = (await res.json()) as WalletBalance[];
+      const balances = (await res.json()) as Balance[];
 
+      // Add timestamp for chart
       return balances.map((b) => ({
         ...b,
-        date: new Date(b.date).toLocaleDateString("en-US", {
-          month: "short",
-          day: "numeric",
-        }),
+        timestamp: new Date(b.date).getTime(),
       }));
     },
     enabled: !!user,
@@ -84,12 +82,10 @@ export function useBrokerage() {
 
       const values = (await res.json()) as BrokerageValue[];
 
+      // Add timestamp for chart
       return values.map((v) => ({
         ...v,
-        date: new Date(v.date).toLocaleDateString("en-US", {
-          month: "short",
-          day: "numeric",
-        }),
+        timestamp: new Date(v.date).getTime(),
       }));
     },
     enabled: !!user,
