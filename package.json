@@ -8,7 +8,10 @@
     "start": "next start",
     "db:setup": "prisma generate && prisma db push && tsx prisma/seed.ts",
     "db:studio": "prisma studio",
-    "db:reset": "rm -f prisma/dev.db && prisma generate && prisma db push && tsx prisma/seed.ts"
+    "db:reset": "rm -f prisma/dev.db && prisma generate && prisma db push && tsx prisma/seed.ts",
+    "test": "vitest",
+    "test:ui": "vitest --ui",
+    "test:coverage": "vitest --coverage"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
@@ -45,6 +48,7 @@
     "@tailwindcss/postcss": "^4",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.0",
+    "@testing-library/user-event": "^14.6.1",
     "@types/bcrypt": "^6.0.0",
     "@types/bcryptjs": "^2.4.6",
     "@types/cors": "^2.8.19",
@@ -57,7 +61,9 @@
     "eslint": "^9",
     "eslint-config-next": "16.0.1",
     "jsdom": "^27.0.1",
+    "msw": "^2.11.6",
     "prisma": "^6.18.0",
+    "resize-observer-polyfill": "^1.5.1",
     "tailwindcss": "^4",
     "ts-node": "^10.9.2",
     "tsx": "^4.20.6",
