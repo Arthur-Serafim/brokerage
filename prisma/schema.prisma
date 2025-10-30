@@ -8,12 +8,13 @@ datasource db {
 }
 
 model User {
-  id        String     @id @default(uuid())
-  email     String     @unique
-  password  String
-  createdAt DateTime   @default(now())
-  balances  Balance[]
-  positions Position[]
+  id              String            @id @default(uuid())
+  email           String            @unique
+  password        String
+  createdAt       DateTime          @default(now())
+  walletBalances  WalletBalance[]
+  brokerageValues BrokerageValue[]
+  positions       Position[]
 }
 
 model Position {
@@ -27,12 +28,20 @@ model Position {
   userId       String
 }
 
-model Balance {
-  id        String   @id @default(uuid())
-  date      DateTime @default(now())
-  balance   Float
-  user      User     @relation(fields: [userId], references: [id])
-  userId    String
+model WalletBalance {
+  id      String   @id @default(uuid())
+  date    DateTime @default(now())
+  balance Float
+  user    User     @relation(fields: [userId], references: [id])
+  userId  String
+}
+
+model BrokerageValue {
+  id      String   @id @default(uuid())
+  date    DateTime @default(now())
+  value   Float
+  user    User     @relation(fields: [userId], references: [id])
+  userId  String
 }
 
 model Symbol {

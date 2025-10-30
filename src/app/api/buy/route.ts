@@ -12,24 +12,44 @@ export async function POST(req: Request) {
   try {
     const { symbol, name, price, shares } = await req.json();
 
+    // Validate input
     if (!symbol || !name || !price || !shares || shares <= 0) {
+      return NextResponse.json({ error: "Invalid input" }, { status: 400 });
+    }
+
+    if (!Number.isInteger(shares)) {
       return NextResponse.json(
-        { error: "Invalid input" },
+        { error: "Shares must be a whole number" },
         { status: 400 }
       );
     }
 
     const totalCost = price * shares;
 
-    // Get current balance
-    const latestBalance = await prisma.balance.findFirst({
+    // Get current wallet balance
+    const latestWalletBalance = await prisma.walletBalance.findFirst({
       where: { userId: user.id },
       orderBy: { date: "desc" },
     });
 
-    if (!latestBalance || latestBalance.balance < totalCost) {
+    if (!latestWalletBalance) {
       return NextResponse.json(
-        { error: "Insufficient funds" },
+        { error: "No wallet balance found. Please contact support." },
+        { status: 400 }
+      );
+    }
+
+    // CRITICAL: Validate sufficient funds
+    if (latestWalletBalance.balance < totalCost) {
+      return NextResponse.json(
+        {
+          error: "Insufficient funds",
+          details: {
+            required: totalCost,
+            available: latestWalletBalance.balance,
+            shortfall: totalCost - latestWalletBalance.balance,
+          },
+        },
         { status: 400 }
       );
     }
@@ -40,7 +60,7 @@ export async function POST(req: Request) {
     });
 
     if (existingPosition) {
-      // Update existing position (calculate new average price)
+      // Update existing position
       const totalShares = existingPosition.shares + shares;
       const totalValue =
         existingPosition.avgPrice * existingPosition.shares + totalCost;
@@ -68,17 +88,43 @@ export async function POST(req: Request) {
       });
     }
 
-    // Create new balance record
-    const newBalance = latestBalance.balance - totalCost;
-    await prisma.balance.create({
+    // Update wallet balance (decrease)
+    const newWalletBalance = latestWalletBalance.balance - totalCost;
+    await prisma.walletBalance.create({
       data: {
         userId: user.id,
-        balance: newBalance,
+        balance: newWalletBalance,
         date: new Date(),
       },
     });
 
-    return NextResponse.json({ success: true, newBalance });
+    // Get current brokerage value
+    const latestBrokerageValue = await prisma.brokerageValue.findFirst({
+      where: { userId: user.id },
+      orderBy: { date: "desc" },
+    });
+
+    // Update brokerage value (increase)
+    const newBrokerageValue = (latestBrokerageValue?.value || 0) + totalCost;
+    await prisma.brokerageValue.create({
+      data: {
+        userId: user.id,
+        value: newBrokerageValue,
+        date: new Date(),
+      },
+    });
+
+    return NextResponse.json({
+      success: true,
+      newWalletBalance,
+      newBrokerageValue,
+      purchase: {
+        symbol,
+        shares,
+        pricePerShare: price,
+        totalCost,
+      },
+    });
   } catch (error) {
     console.error("Buy error:", error);
     return NextResponse.json(

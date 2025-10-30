@@ -1,9 +1,11 @@
 "use client";
+
 import "./globals.css";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import ReactQueryProvider from "@/components/providers/react-query-provider";
-import Layout from "@/components/Layout";
+import { NuqsAdapter } from "nuqs/adapters/next/app";
 import { usePathname } from "next/navigation";
+import Layout from "@/components/app-layout";
 
 const unauthRoutes = ["/login"];
 
@@ -20,7 +22,9 @@ export default function RootLayout({
     return (
       <html lang="en">
         <body>
-          <ReactQueryProvider>{children}</ReactQueryProvider>
+          <NuqsAdapter>
+            <ReactQueryProvider>{children}</ReactQueryProvider>
+          </NuqsAdapter>
         </body>
       </html>
     );
@@ -30,11 +34,13 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
-        <SidebarProvider>
-          <ReactQueryProvider>
-            <Layout>{children}</Layout>
-          </ReactQueryProvider>
-        </SidebarProvider>
+        <NuqsAdapter>
+          <SidebarProvider>
+            <ReactQueryProvider>
+              <Layout>{children}</Layout>
+            </ReactQueryProvider>
+          </SidebarProvider>
+        </NuqsAdapter>
       </body>
     </html>
   );

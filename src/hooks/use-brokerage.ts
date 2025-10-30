@@ -12,10 +12,16 @@ interface Position {
   currentPrice: number;
 }
 
-interface Balance {
+interface WalletBalance {
   id: string;
   date: string;
   balance: number;
+}
+
+interface BrokerageValue {
+  id: string;
+  date: string;
+  value: number;
 }
 
 export function useBrokerage() {
@@ -39,20 +45,20 @@ export function useBrokerage() {
     enabled: !!user,
   });
 
-  // Fetch balance history
-  const { data: balanceHistory = [] } = useQuery({
-    queryKey: ["balances"],
+  // Fetch wallet balance history
+  const { data: walletBalances = [] } = useQuery({
+    queryKey: ["wallet-balances"],
     queryFn: async () => {
-      const res = await fetch("/api/balances", {
+      const res = await fetch("/api/wallet-balances", {
         credentials: "include",
       });
 
       if (!res.ok) {
-        throw new Error("Failed to fetch balances");
+        throw new Error("Failed to fetch wallet balances");
       }
 
-      const balances = await res.json() as Balance[];
-      
+      const balances = (await res.json()) as WalletBalance[];
+
       // Format dates for chart
       return balances.map((b) => ({
         ...b,
@@ -65,7 +71,32 @@ export function useBrokerage() {
     enabled: !!user,
   });
 
-  // Buy asset mutation
+  // Fetch brokerage value history
+  const { data: brokerageValues = [] } = useQuery({
+    queryKey: ["brokerage-values"],
+    queryFn: async () => {
+      const res = await fetch("/api/brokerage-values", {
+        credentials: "include",
+      });
+
+      if (!res.ok) {
+        throw new Error("Failed to fetch brokerage values");
+      }
+
+      const values = (await res.json()) as BrokerageValue[];
+
+      // Format dates for chart
+      return values.map((v) => ({
+        ...v,
+        date: new Date(v.date).toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+        }),
+      }));
+    },
+    enabled: !!user,
+  });
+
   const buyAsset = useMutation({
     mutationFn: async ({
       symbol,
@@ -84,18 +115,20 @@ export function useBrokerage() {
         body: JSON.stringify({ symbol, name, price, shares }),
         credentials: "include",
       });
-
+  
+      const data = await res.json();
+  
       if (!res.ok) {
-        const error = await res.json();
-        throw new Error(error.error || "Failed to buy asset");
+        throw new Error(data.error || "Failed to buy asset");
       }
-
-      return res.json();
+  
+      return data;
     },
     onSuccess: () => {
       // Invalidate and refetch
       queryClient.invalidateQueries({ queryKey: ["positions"] });
-      queryClient.invalidateQueries({ queryKey: ["balances"] });
+      queryClient.invalidateQueries({ queryKey: ["wallet-balances"] });
+      queryClient.invalidateQueries({ queryKey: ["brokerage-values"] });
     },
   });
 
@@ -103,7 +136,8 @@ export function useBrokerage() {
     user: user
       ? {
           positions,
-          balanceHistory,
+          walletBalances,
+          brokerageValues,
         }
       : null,
     buyAsset: (symbol: string, name: string, price: number, shares: number) =>

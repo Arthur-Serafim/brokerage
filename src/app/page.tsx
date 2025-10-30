@@ -1,8 +1,7 @@
 "use client";
 
-import { useState } from "react";
+import { useQueryState } from "nuqs";
 import { useBrokerage } from "@/hooks/use-brokerage";
-import { useSymbols } from "@/hooks/use-symbols";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Table,
@@ -13,7 +12,13 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { TrendingUp } from "lucide-react";
+import {
+  TrendingUp,
+  TrendingDown,
+  Wallet,
+  LineChart as LineChartIcon,
+  ShoppingCart,
+} from "lucide-react";
 import {
   LineChart,
   Line,
@@ -23,81 +28,131 @@ import {
   ResponsiveContainer,
   CartesianGrid,
 } from "recharts";
-import {
-  Dialog,
-  DialogTrigger,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogFooter,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useMe } from "@/contexts/AuthContext";
+import { BuyAssetDialog } from "@/components/buy-asset-dialog";
 
 export default function Home() {
   const { user: authUser, isLoading: authLoading } = useMe();
   const { user, buyAsset } = useBrokerage();
-  const {
-    data: symbolsData,
-    isLoading: symbolsLoading,
-    isError,
-  } = useSymbols();
+  const [, setBuyDialog] = useQueryState("buy");
 
-  const [selectedSymbol, setSelectedSymbol] = useState("");
-  const [shares, setShares] = useState("");
-  const [dialogOpen, setDialogOpen] = useState(false);
+  const handleBuyAsset = (
+    symbol: string,
+    name: string,
+    price: number,
+    shares: number
+  ) => {
+    buyAsset(symbol, name, price, shares);
+  };
 
+  // Loading state
   if (authLoading) {
     return (
-      <main className="p-10">
-        <Skeleton className="h-8 w-64 mb-4" />
-        <Skeleton className="h-64 w-full" />
+      <main className="p-10 space-y-8">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between">
+          <div>
+            <Skeleton className="h-9 w-48 mb-2" />
+            <Skeleton className="h-5 w-64" />
+          </div>
+          <Skeleton className="h-10 w-32 mt-4 md:mt-0" />
+        </div>
+        <Skeleton className="h-40 w-full" />
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <Skeleton className="h-80 w-full" />
+          <Skeleton className="h-80 w-full" />
+        </div>
       </main>
     );
   }
 
-  if (!authUser || !user) {
+  if (!authUser) {
     return null;
   }
 
-  const balanceHistory = user.balanceHistory;
-
-  if (balanceHistory.length === 0) {
+  // Check if user data is still loading
+  if (!user) {
     return (
-      <main className="p-10">
-        <p>No balance history found.</p>
+      <main className="p-10 space-y-8">
+        <Skeleton className="h-40 w-full" />
       </main>
     );
   }
 
-  const totalBalance = balanceHistory[balanceHistory.length - 1].balance;
-  const dailyChange =
-    balanceHistory.length > 1
-      ? balanceHistory[balanceHistory.length - 1].balance -
-        balanceHistory[balanceHistory.length - 2].balance
+  const walletBalances = user.walletBalances || [];
+  const brokerageValues = user.brokerageValues || [];
+  const positions = user.positions || [];
+
+  // Complete empty state - no data at all
+  if (walletBalances.length === 0 && brokerageValues.length === 0) {
+    return (
+      <main className="p-10">
+        <BuyAssetDialog onBuy={handleBuyAsset} />
+
+        <div className="flex flex-col items-center justify-center min-h-[60vh] text-center">
+          <div className="rounded-full bg-muted p-6 mb-6">
+            <ShoppingCart className="h-12 w-12 text-muted-foreground" />
+          </div>
+          <h2 className="text-2xl font-bold mb-2">Welcome to Marketstack</h2>
+          <p className="text-muted-foreground mb-6 max-w-md">
+            You don't have any balance history yet. Start by buying your first
+            asset to begin tracking your portfolio.
+          </p>
+          <Button size="lg" onClick={() => setBuyDialog("open")}>
+            Buy Your First Asset
+          </Button>
+        </div>
+      </main>
+    );
+  }
+
+  // Wallet calculations
+  const currentWalletBalance =
+    walletBalances.length > 0
+      ? walletBalances[walletBalances.length - 1].balance
       : 0;
-  const changePct =
-    balanceHistory.length > 1
+  const walletChange =
+    walletBalances.length > 1
+      ? walletBalances[walletBalances.length - 1].balance -
+        walletBalances[walletBalances.length - 2].balance
+      : 0;
+  const walletChangePct =
+    walletBalances.length > 1 &&
+    walletBalances[walletBalances.length - 2].balance > 0
       ? (
-          (dailyChange / balanceHistory[balanceHistory.length - 2].balance) *
+          (walletChange / walletBalances[walletBalances.length - 2].balance) *
           100
         ).toFixed(2)
       : "0.00";
 
-  const handleBuy = () => {
-    const selected = symbolsData?.data.find((s) => s.symbol === selectedSymbol);
-    if (!selected) return;
+  // Brokerage calculations
+  const currentBrokerageValue =
+    brokerageValues.length > 0
+      ? brokerageValues[brokerageValues.length - 1].value
+      : 0;
+  const brokerageChange =
+    brokerageValues.length > 1
+      ? brokerageValues[brokerageValues.length - 1].value -
+        brokerageValues[brokerageValues.length - 2].value
+      : 0;
+  const brokerageChangePct =
+    brokerageValues.length > 1 &&
+    brokerageValues[brokerageValues.length - 2].value > 0
+      ? (
+          (brokerageChange /
+            brokerageValues[brokerageValues.length - 2].value) *
+          100
+        ).toFixed(2)
+      : "0.00";
 
-    buyAsset(selected.symbol, selected.name, selected.price, Number(shares));
-
-    setSelectedSymbol("");
-    setShares("");
-    setDialogOpen(false);
-  };
+  // Total portfolio
+  const totalPortfolio = currentWalletBalance + currentBrokerageValue;
 
   return (
     <main className="p-10 space-y-8">
+      {/* Buy Asset Dialog */}
+      <BuyAssetDialog onBuy={handleBuyAsset} />
+
       {/* Header */}
       <div className="flex flex-col md:flex-row md:items-center md:justify-between">
         <div>
@@ -107,87 +162,158 @@ export default function Home() {
           </p>
         </div>
 
-        <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogTrigger asChild>
-            <Button className="mt-4 md:mt-0">Buy Assets</Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Buy Asset</DialogTitle>
-            </DialogHeader>
-
-            <div className="space-y-2 py-2">
-              {symbolsLoading ? (
-                <Skeleton className="h-10 w-full" />
-              ) : isError ? (
-                <p className="text-red-500">Failed to load symbols.</p>
-              ) : (
-                <select
-                  value={selectedSymbol}
-                  onChange={(e) => setSelectedSymbol(e.target.value)}
-                  className="w-full border rounded p-2"
-                >
-                  <option value="">Select Symbol</option>
-                  {symbolsData?.data.map((s) => (
-                    <option key={s.symbol} value={s.symbol}>
-                      {s.symbol} — {s.name} (${s.price.toFixed(2)})
-                    </option>
-                  ))}
-                </select>
-              )}
-
-              <Input
-                placeholder="Shares"
-                type="number"
-                value={shares}
-                onChange={(e) => setShares(e.target.value)}
-              />
-            </div>
-
-            <DialogFooter>
-              <Button onClick={handleBuy} disabled={!selectedSymbol || !shares}>
-                Confirm Purchase
-              </Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+        <Button className="mt-4 md:mt-0" onClick={() => setBuyDialog("open")}>
+          <ShoppingCart className="h-4 w-4 mr-2" />
+          Buy Assets
+        </Button>
       </div>
 
-      {/* Wallet Chart */}
-      <Card>
-        <CardHeader className="flex flex-row items-center justify-between">
-          <CardTitle>Wallet Balance</CardTitle>
-          <div
-            className={`flex items-center gap-2 text-sm font-medium ${
-              Number(changePct) >= 0 ? "text-green-600" : "text-red-600"
-            }`}
-          >
-            <TrendingUp className="h-4 w-4" />
-            {Number(changePct) >= 0 ? "+" : ""}
-            {changePct}%
-          </div>
+      {/* Total Portfolio */}
+      <Card className="bg-gradient-to-br from-primary/10 to-primary/5">
+        <CardHeader>
+          <CardTitle className="text-lg">Total Portfolio Value</CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="text-3xl font-bold mb-4">
-            ${totalBalance.toLocaleString()}
+          <div className="text-4xl font-bold">
+            $
+            {totalPortfolio.toLocaleString(undefined, {
+              minimumFractionDigits: 2,
+              maximumFractionDigits: 2,
+            })}
           </div>
-          <ResponsiveContainer width="100%" height={240}>
-            <LineChart data={balanceHistory}>
-              <CartesianGrid strokeDasharray="3 3" />
-              <XAxis dataKey="date" tickLine={false} />
-              <YAxis tickLine={false} />
-              <Tooltip />
-              <Line
-                type="monotone"
-                dataKey="balance"
-                stroke="black"
-                strokeWidth={2}
-                dot={false}
-              />
-            </LineChart>
-          </ResponsiveContainer>
+          <div className="grid grid-cols-2 gap-4 mt-4 text-sm">
+            <div>
+              <p className="text-muted-foreground">Wallet Balance</p>
+              <p className="font-semibold">
+                ${currentWalletBalance.toLocaleString()}
+              </p>
+            </div>
+            <div>
+              <p className="text-muted-foreground">Brokerage Value</p>
+              <p className="font-semibold">
+                ${currentBrokerageValue.toLocaleString()}
+              </p>
+            </div>
+          </div>
         </CardContent>
       </Card>
+
+      {/* Charts Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Wallet Balance Chart */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Wallet className="h-5 w-5" />
+              <CardTitle>Wallet Balance</CardTitle>
+            </div>
+            {walletBalances.length > 1 && (
+              <div
+                className={`flex items-center gap-2 text-sm font-medium ${
+                  Number(walletChangePct) >= 0
+                    ? "text-green-600"
+                    : "text-red-600"
+                }`}
+              >
+                {Number(walletChangePct) >= 0 ? (
+                  <TrendingUp className="h-4 w-4" />
+                ) : (
+                  <TrendingDown className="h-4 w-4" />
+                )}
+                {Number(walletChangePct) >= 0 ? "+" : ""}
+                {walletChangePct}%
+              </div>
+            )}
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold mb-4">
+              ${currentWalletBalance.toLocaleString()}
+            </div>
+            {walletBalances.length > 0 ? (
+              <ResponsiveContainer width="100%" height={200}>
+                <LineChart data={walletBalances}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis
+                    dataKey="date"
+                    tickLine={false}
+                    tick={{ fontSize: 12 }}
+                  />
+                  <YAxis tickLine={false} tick={{ fontSize: 12 }} />
+                  <Tooltip />
+                  <Line
+                    type="monotone"
+                    dataKey="balance"
+                    stroke="#3b82f6"
+                    strokeWidth={2}
+                    dot={false}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-[200px] flex items-center justify-center text-muted-foreground">
+                No wallet history yet
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        {/* Brokerage Value Chart */}
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between">
+            <div className="flex items-center gap-2">
+              <LineChartIcon className="h-5 w-5" />
+              <CardTitle>Brokerage Value</CardTitle>
+            </div>
+            {brokerageValues.length > 1 && (
+              <div
+                className={`flex items-center gap-2 text-sm font-medium ${
+                  Number(brokerageChangePct) >= 0
+                    ? "text-green-600"
+                    : "text-red-600"
+                }`}
+              >
+                {Number(brokerageChangePct) >= 0 ? (
+                  <TrendingUp className="h-4 w-4" />
+                ) : (
+                  <TrendingDown className="h-4 w-4" />
+                )}
+                {Number(brokerageChangePct) >= 0 ? "+" : ""}
+                {brokerageChangePct}%
+              </div>
+            )}
+          </CardHeader>
+          <CardContent>
+            <div className="text-2xl font-bold mb-4">
+              ${currentBrokerageValue.toLocaleString()}
+            </div>
+            {brokerageValues.length > 0 ? (
+              <ResponsiveContainer width="100%" height={200}>
+                <LineChart data={brokerageValues}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis
+                    dataKey="date"
+                    tickLine={false}
+                    tick={{ fontSize: 12 }}
+                  />
+                  <YAxis tickLine={false} tick={{ fontSize: 12 }} />
+                  <Tooltip />
+                  <Line
+                    type="monotone"
+                    dataKey="value"
+                    stroke="#10b981"
+                    strokeWidth={2}
+                    dot={false}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="h-[200px] flex items-center justify-center text-muted-foreground">
+                No brokerage history yet
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
 
       {/* Positions Table */}
       <Card>
@@ -195,10 +321,19 @@ export default function Home() {
           <CardTitle>Your Positions</CardTitle>
         </CardHeader>
         <CardContent>
-          {user.positions.length === 0 ? (
-            <p className="text-muted-foreground">
-              No positions yet. Buy some assets to get started!
-            </p>
+          {positions.length === 0 ? (
+            <div className="text-center py-12">
+              <div className="rounded-full bg-muted p-4 w-16 h-16 mx-auto mb-4 flex items-center justify-center">
+                <LineChartIcon className="h-8 w-8 text-muted-foreground" />
+              </div>
+              <h3 className="text-lg font-semibold mb-2">No positions yet</h3>
+              <p className="text-muted-foreground mb-4">
+                Start investing by buying your first asset
+              </p>
+              <Button onClick={() => setBuyDialog("open")}>
+                Buy Your First Asset
+              </Button>
+            </div>
           ) : (
             <Table>
               <TableHeader>
@@ -212,7 +347,7 @@ export default function Home() {
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {user.positions.map((p) => {
+                {positions.map((p) => {
                   const pnl = (p.currentPrice - p.avgPrice) * p.shares;
                   const pnlColor = pnl >= 0 ? "text-green-600" : "text-red-600";
                   return (

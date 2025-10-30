@@ -8,19 +8,26 @@ async function main() {
 
   const password = await bcrypt.hash("password123", 10);
 
+  // Delete existing data for fresh seed
+  console.log("🗑️  Cleaning existing data...");
+  await prisma.position.deleteMany();
+  await prisma.brokerageValue.deleteMany();
+  await prisma.walletBalance.deleteMany();
+  await prisma.symbol.deleteMany();
+  await prisma.user.deleteMany();
+
   // Create user
-  const user = await prisma.user.upsert({
-    where: { email: "test@example.com" },
-    update: {},
-    create: { 
-      email: "test@example.com", 
-      password 
+  console.log("👤 Creating user...");
+  const user = await prisma.user.create({
+    data: {
+      email: "test@example.com",
+      password,
     },
   });
-
-  console.log("👤 Created user:", user.email);
+  console.log("✅ Created user:", user.email);
 
   // Create symbols
+  console.log("📈 Creating symbols...");
   const symbols = [
     { symbol: "AAPL", name: "Apple Inc.", price: 182.45 },
     { symbol: "TSLA", name: "Tesla Inc.", price: 248.11 },
@@ -31,86 +38,106 @@ async function main() {
   ];
 
   for (const s of symbols) {
-    await prisma.symbol.upsert({
-      where: { symbol: s.symbol },
-      update: { price: s.price },
-      create: s,
+    await prisma.symbol.create({
+      data: s,
     });
-    console.log("📈 Created symbol:", s.symbol);
+    console.log(`  ✅ ${s.symbol} - ${s.name}`);
   }
 
-  // Create balance history
-  const existingBalances = await prisma.balance.count({ 
-    where: { userId: user.id } 
+  // Create wallet balance history (7 days) - starting with $100,000
+  console.log("💰 Creating wallet balance history...");
+  const now = new Date();
+  const initialBalance = 100000;
+  const walletBalances = [];
+  
+  for (let i = 6; i >= 0; i--) {
+    const balance = initialBalance - i * 2000; // Decreasing from 100k to 88k
+    walletBalances.push({
+      userId: user.id,
+      balance: balance,
+      date: new Date(now.getTime() - i * 24 * 60 * 60 * 1000),
+    });
+  }
+
+  await prisma.walletBalance.createMany({
+    data: walletBalances,
   });
   
-  if (existingBalances === 0) {
-    const now = new Date();
-    await prisma.balance.createMany({
-      data: [
-        { 
-          userId: user.id, 
-          balance: 12500, 
-          date: new Date(now.getTime() - 3 * 24 * 60 * 60 * 1000) // 3 days ago
-        },
-        { 
-          userId: user.id, 
-          balance: 13200, 
-          date: new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000) // 2 days ago
-        },
-        { 
-          userId: user.id, 
-          balance: 14100, 
-          date: new Date(now.getTime() - 1 * 24 * 60 * 60 * 1000) // yesterday
-        },
-        { 
-          userId: user.id, 
-          balance: 15300, 
-          date: now // today
-        },
-      ],
+  const currentBalance = walletBalances[walletBalances.length - 1].balance;
+  console.log(`✅ Created ${walletBalances.length} wallet balance entries`);
+  console.log(`   Starting: $${initialBalance.toLocaleString()}`);
+  console.log(`   Current:  $${currentBalance.toLocaleString()}`);
+
+  // Create brokerage value history (7 days)
+  console.log("📊 Creating brokerage value history...");
+  const brokerageValues = [];
+  
+  for (let i = 6; i >= 0; i--) {
+    brokerageValues.push({
+      userId: user.id,
+      value: (6 - i) * 2000, // Growing from 0 to 12k
+      date: new Date(now.getTime() - i * 24 * 60 * 60 * 1000),
     });
-    console.log("💰 Created balance history for user");
   }
+
+  await prisma.brokerageValue.createMany({
+    data: brokerageValues,
+  });
+  
+  const currentBrokerageValue = brokerageValues[brokerageValues.length - 1].value;
+  console.log(`✅ Created ${brokerageValues.length} brokerage value entries`);
+  console.log(`   Current value: $${currentBrokerageValue.toLocaleString()}`);
 
   // Create positions
-  const existingPositions = await prisma.position.count({ 
-    where: { userId: user.id } 
+  console.log("📊 Creating positions...");
+  const positions = [
+    {
+      userId: user.id,
+      symbol: "AAPL",
+      name: "Apple Inc.",
+      shares: 10,
+      avgPrice: 175.5,
+      currentPrice: 182.45,
+    },
+    {
+      userId: user.id,
+      symbol: "TSLA",
+      name: "Tesla Inc.",
+      shares: 5,
+      avgPrice: 240.0,
+      currentPrice: 248.11,
+    },
+    {
+      userId: user.id,
+      symbol: "NVDA",
+      name: "NVIDIA Corp.",
+      shares: 3,
+      avgPrice: 450.0,
+      currentPrice: 465.3,
+    },
+  ];
+
+  await prisma.position.createMany({
+    data: positions,
+  });
+  
+  console.log(`✅ Created ${positions.length} positions`);
+  positions.forEach(p => {
+    const value = p.shares * p.currentPrice;
+    console.log(`   ${p.symbol}: ${p.shares} shares = $${value.toLocaleString()}`);
   });
 
-  if (existingPositions === 0) {
-    await prisma.position.createMany({
-      data: [
-        {
-          userId: user.id,
-          symbol: "AAPL",
-          name: "Apple Inc.",
-          shares: 10,
-          avgPrice: 175.50,
-          currentPrice: 182.45,
-        },
-        {
-          userId: user.id,
-          symbol: "TSLA",
-          name: "Tesla Inc.",
-          shares: 5,
-          avgPrice: 240.00,
-          currentPrice: 248.11,
-        },
-        {
-          userId: user.id,
-          symbol: "NVDA",
-          name: "NVIDIA Corp.",
-          shares: 3,
-          avgPrice: 450.00,
-          currentPrice: 465.30,
-        },
-      ],
-    });
-    console.log("📊 Created positions for user");
-  }
-
-  console.log("✅ Seeding complete!");
+  console.log("\n✅ Seeding complete!");
+  console.log("=" .repeat(50));
+  console.log("📧 Login credentials:");
+  console.log("   Email:    test@example.com");
+  console.log("   Password: password123");
+  console.log("=" .repeat(50));
+  console.log("💰 Portfolio Summary:");
+  console.log(`   Wallet Balance:    $${currentBalance.toLocaleString()}`);
+  console.log(`   Brokerage Value:   $${currentBrokerageValue.toLocaleString()}`);
+  console.log(`   Total Portfolio:   $${(currentBalance + currentBrokerageValue).toLocaleString()}`);
+  console.log("=" .repeat(50));
 }
 
 main()
