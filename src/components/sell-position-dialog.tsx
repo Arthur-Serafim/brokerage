@@ -122,7 +122,6 @@ export function SellPositionDialog({
 
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-            {/* Position Info */}
             <div className="rounded-lg bg-muted p-4">
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
@@ -167,7 +166,6 @@ export function SellPositionDialog({
               )}
             />
 
-            {/* Sale Summary */}
             {shares && !form.formState.errors.shares && sharesToSell > 0 && (
               <div className="rounded-lg bg-muted p-4">
                 <div className="space-y-2">
@@ -220,7 +218,6 @@ export function SellPositionDialog({
               </div>
             )}
 
-            {/* Error Alert */}
             {sellError && (
               <Alert variant="destructive">
                 <AlertCircle className="h-4 w-4" />

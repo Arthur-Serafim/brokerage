@@ -147,7 +147,6 @@ export function BuyAssetDialog({ onBuy }: BuyAssetDialogProps) {
 
         <Form {...form}>
           <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-4">
-            {/* Available Balance */}
             <div className="rounded-lg bg-muted p-3 text-sm">
               <div className="flex justify-between">
                 <span className="text-muted-foreground">
@@ -218,7 +217,6 @@ export function BuyAssetDialog({ onBuy }: BuyAssetDialogProps) {
               )}
             />
 
-            {/* Purchase Summary */}
             {selectedSymbol &&
               shares &&
               !form.formState.errors.shares &&
@@ -271,7 +269,6 @@ export function BuyAssetDialog({ onBuy }: BuyAssetDialogProps) {
                 </div>
               )}
 
-            {/* Error Alert */}
             {purchaseError && (
               <Alert variant="destructive">
                 <AlertCircle className="h-4 w-4" />

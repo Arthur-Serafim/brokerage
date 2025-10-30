@@ -28,7 +28,6 @@ export function useBrokerage() {
   const { user } = useMe();
   const queryClient = useQueryClient();
 
-  // Fetch positions
   const { data: positions = [] } = useQuery({
     queryKey: ["positions"],
     queryFn: async () => {
@@ -45,7 +44,6 @@ export function useBrokerage() {
     enabled: !!user,
   });
 
-  // Fetch wallet balance history
   const { data: walletBalances = [] } = useQuery({
     queryKey: ["wallet-balances"],
     queryFn: async () => {
@@ -59,7 +57,6 @@ export function useBrokerage() {
 
       const balances = (await res.json()) as Balance[];
 
-      // Add timestamp for chart
       return balances.map((b) => ({
         ...b,
         timestamp: new Date(b.date).getTime(),
@@ -68,7 +65,6 @@ export function useBrokerage() {
     enabled: !!user,
   });
 
-  // Fetch brokerage value history
   const { data: brokerageValues = [] } = useQuery({
     queryKey: ["brokerage-values"],
     queryFn: async () => {
@@ -82,7 +78,6 @@ export function useBrokerage() {
 
       const values = (await res.json()) as BrokerageValue[];
 
-      // Add timestamp for chart
       return values.map((v) => ({
         ...v,
         timestamp: new Date(v.date).getTime(),
@@ -91,7 +86,6 @@ export function useBrokerage() {
     enabled: !!user,
   });
 
-  // Buy asset mutation
   const buyAsset = useMutation({
     mutationFn: async ({
       symbol,
@@ -126,7 +120,6 @@ export function useBrokerage() {
     },
   });
 
-  // Sell position mutation
   const sellPosition = useMutation({
     mutationFn: async ({
       positionId,

@@ -108,7 +108,6 @@ export default function Home() {
   const brokerageValues = user.brokerageValues || [];
   const positions = user.positions || [];
 
-  // Complete empty state
   if (walletBalances.length === 0 && brokerageValues.length === 0) {
     return (
       <main className="max-w-7xl mx-auto p-6 md:p-10">
@@ -200,8 +199,6 @@ export default function Home() {
         onOpenChange={setSellDialogOpen}
         onSell={handleSell}
       />
-
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
@@ -214,8 +211,6 @@ export default function Home() {
           Buy Assets
         </Button>
       </div>
-
-      {/* Total Portfolio with Distribution */}
       <Card>
         <CardHeader>
           <div className="flex items-center gap-2">
@@ -225,7 +220,6 @@ export default function Home() {
         </CardHeader>
         <CardContent>
           <div className="grid md:grid-cols-2 gap-8">
-            {/* Left: Total value and breakdown */}
             <div className="space-y-6">
               <div>
                 <div className="text-4xl font-bold mb-2">
@@ -237,7 +231,6 @@ export default function Home() {
               </div>
 
               <div className="space-y-4">
-                {/* Wallet */}
                 <div className="flex items-center justify-between p-4 rounded-lg border bg-card">
                   <div className="flex items-center gap-3">
                     <div
@@ -258,7 +251,6 @@ export default function Home() {
                   </div>
                 </div>
 
-                {/* Brokerage */}
                 <div className="flex items-center justify-between p-4 rounded-lg border bg-card">
                   <div className="flex items-center gap-3">
                     <div
@@ -281,7 +273,6 @@ export default function Home() {
               </div>
             </div>
 
-            {/* Right: Pie chart */}
             <div className="flex items-center justify-center">
               {totalPortfolio > 0 ? (
                 <ResponsiveContainer width="100%" height={280}>
@@ -313,9 +304,7 @@ export default function Home() {
         </CardContent>
       </Card>
 
-      {/* Charts Grid */}
       <div className="grid md:grid-cols-2 gap-6">
-        {/* Wallet Balance Chart */}
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between">
@@ -496,7 +485,6 @@ export default function Home() {
         </Card>
       </div>
 
-      {/* Positions Table */}
       <Card>
         <CardHeader>
           <CardTitle className="text-lg">Your Positions</CardTitle>
