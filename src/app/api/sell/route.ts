@@ -1,6 +1,43 @@
 import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { z } from "zod";
+import currency from "currency.js";
+import { Prisma } from "@prisma/client";
+
+const USD = (value: number) => currency(value, { precision: 2 });
+
+class InsufficientSharesError extends Error {
+  constructor(
+    public requested: number,
+    public available: number
+  ) {
+    super("Insufficient shares");
+    this.name = "InsufficientSharesError";
+  }
+}
+
+class PositionNotFoundError extends Error {
+  constructor() {
+    super("Position not found");
+    this.name = "PositionNotFoundError";
+  }
+}
+
+class WalletNotFoundError extends Error {
+  constructor() {
+    super("No wallet balance found. Please contact support.");
+    this.name = "WalletNotFoundError";
+  }
+}
+
+const sellAssetSchema = z.object({
+  positionId: z.string().min(1, "Position ID is required"),
+  shares: z
+    .number()
+    .int("Shares must be a whole number")
+    .positive("Shares must be positive"),
+});
 
 export async function POST(req: Request) {
   const user = await getCurrentUser(req);
@@ -10,124 +47,156 @@ export async function POST(req: Request) {
   }
 
   try {
-    const { positionId, shares } = await req.json();
+    const body = await req.json();
+    const validation = sellAssetSchema.safeParse(body);
 
-    if (!positionId || !shares || shares <= 0) {
-      return NextResponse.json({ error: "Invalid input" }, { status: 400 });
-    }
-
-    if (!Number.isInteger(shares)) {
+    if (!validation.success) {
       return NextResponse.json(
-        { error: "Shares must be a whole number" },
+        {
+          error: "Validation failed",
+          details: validation.error.flatten().fieldErrors,
+        },
         { status: 400 }
       );
     }
 
-    const position = await prisma.position.findUnique({
-      where: { id: positionId },
+    const { positionId, shares } = validation.data;
+
+    const result = await prisma.$transaction(
+      async (tx) => {
+        // Get and validate position
+        const position = await tx.position.findUnique({
+          where: { id: positionId },
+        });
+
+        if (!position || position.userId !== user.id) {
+          throw new PositionNotFoundError();
+        }
+
+        if (position.shares < shares) {
+          throw new InsufficientSharesError(shares, position.shares);
+        }
+
+        // Calculate sale value using currency.js
+        const pricePerShare = USD(position.currentPrice);
+        const saleValue = pricePerShare.multiply(shares);
+
+        // Update or delete position
+        if (position.shares === shares) {
+          await tx.position.delete({
+            where: { id: positionId },
+          });
+        } else {
+          await tx.position.update({
+            where: { id: positionId },
+            data: {
+              shares: position.shares - shares,
+            },
+          });
+        }
+
+        // Get latest wallet balance
+        const latestWalletBalance = await tx.walletBalance.findFirst({
+          where: { userId: user.id },
+          orderBy: { date: "desc" },
+        });
+
+        if (!latestWalletBalance) {
+          throw new WalletNotFoundError();
+        }
+
+        // Update wallet balance
+        const currentBalance = USD(latestWalletBalance.balance);
+        const newWalletBalance = currentBalance.add(saleValue);
+
+        await tx.walletBalance.create({
+          data: {
+            userId: user.id,
+            balance: newWalletBalance.value,
+            date: new Date(),
+          },
+        });
+
+        // Get latest brokerage value
+        const latestBrokerageValue = await tx.brokerageValue.findFirst({
+          where: { userId: user.id },
+          orderBy: { date: "desc" },
+        });
+
+        // Update brokerage value
+        const currentBrokerageValue = USD(latestBrokerageValue?.value || 0);
+        const newBrokerageValue = currentBrokerageValue.subtract(saleValue);
+        const finalBrokerageValue = USD(Math.max(0, newBrokerageValue.value));
+
+        await tx.brokerageValue.create({
+          data: {
+            userId: user.id,
+            value: finalBrokerageValue.value,
+            date: new Date(),
+          },
+        });
+
+        // Create transaction record
+        await tx.transaction.create({
+          data: {
+            userId: user.id,
+            type: "SELL",
+            symbol: position.symbol,
+            shares,
+            pricePerShare: pricePerShare.value,
+            amount: saleValue.value,
+            from: "BROKERAGE",
+            to: "WALLET",
+            description: `Sold ${shares} shares of ${position.symbol} at ${pricePerShare.format()} per share`,
+          },
+        });
+
+        return {
+          newWalletBalance: newWalletBalance.value,
+          newBrokerageValue: finalBrokerageValue.value,
+          sale: {
+            symbol: position.symbol,
+            shares,
+            pricePerShare: pricePerShare.value,
+            totalValue: saleValue.value,
+          },
+        };
+      },
+      {
+        maxWait: 5000, // 5 seconds max wait
+        timeout: 10000, // 10 seconds timeout
+        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+      }
+    );
+
+    return NextResponse.json({
+      success: true,
+      ...result,
     });
+  } catch (error) {
+    console.error("Sell error:", error);
 
-    if (!position || position.userId !== user.id) {
-      return NextResponse.json(
-        { error: "Position not found" },
-        { status: 404 }
-      );
-    }
-
-    if (position.shares < shares) {
+    if (error instanceof InsufficientSharesError) {
       return NextResponse.json(
         {
-          error: "Insufficient shares",
+          error: error.message,
           details: {
-            requested: shares,
-            available: position.shares,
+            requested: error.requested,
+            available: error.available,
           },
         },
         { status: 400 }
       );
     }
 
-    const saleValue = position.currentPrice * shares;
-
-    if (position.shares === shares) {
-      await prisma.position.delete({
-        where: { id: positionId },
-      });
-    } else {
-      await prisma.position.update({
-        where: { id: positionId },
-        data: {
-          shares: position.shares - shares,
-        },
-      });
+    if (error instanceof PositionNotFoundError) {
+      return NextResponse.json({ error: error.message }, { status: 404 });
     }
 
-    const latestWalletBalance = await prisma.walletBalance.findFirst({
-      where: { userId: user.id },
-      orderBy: { date: "desc" },
-    });
-
-    if (!latestWalletBalance) {
-      return NextResponse.json(
-        { error: "No wallet balance found" },
-        { status: 400 }
-      );
+    if (error instanceof WalletNotFoundError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
     }
 
-    const newWalletBalance = latestWalletBalance.balance + saleValue;
-    await prisma.walletBalance.create({
-      data: {
-        userId: user.id,
-        balance: newWalletBalance,
-        date: new Date(),
-      },
-    });
-
-    const latestBrokerageValue = await prisma.brokerageValue.findFirst({
-      where: { userId: user.id },
-      orderBy: { date: "desc" },
-    });
-
-    const newBrokerageValue = Math.max(
-      0,
-      (latestBrokerageValue?.value || 0) - saleValue
-    );
-    await prisma.brokerageValue.create({
-      data: {
-        userId: user.id,
-        value: newBrokerageValue,
-        date: new Date(),
-      },
-    });
-
-    // Create transaction record
-    await prisma.transaction.create({
-      data: {
-        userId: user.id,
-        type: "SELL",
-        symbol: position.symbol,
-        shares,
-        pricePerShare: position.currentPrice,
-        amount: saleValue,
-        from: "BROKERAGE",
-        to: "WALLET",
-        description: `Sold ${shares} shares of ${position.symbol} at $${position.currentPrice.toFixed(2)} per share`,
-      },
-    });
-
-    return NextResponse.json({
-      success: true,
-      newWalletBalance,
-      newBrokerageValue,
-      sale: {
-        symbol: position.symbol,
-        shares,
-        pricePerShare: position.currentPrice,
-        totalValue: saleValue,
-      },
-    });
-  } catch (error) {
-    console.error("Sell error:", error);
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }

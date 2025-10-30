@@ -2,6 +2,29 @@ import { NextResponse } from "next/server";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
+import currency from "currency.js";
+import { Prisma } from "@prisma/client";
+
+const USD = (value: number) => currency(value, { precision: 2 });
+
+// Custom error classes
+class InsufficientFundsError extends Error {
+  constructor(
+    public required: number,
+    public available: number,
+    public shortfall: number
+  ) {
+    super("Insufficient funds");
+    this.name = "InsufficientFundsError";
+  }
+}
+
+class WalletNotFoundError extends Error {
+  constructor() {
+    super("No wallet balance found. Please contact support.");
+    this.name = "WalletNotFoundError";
+  }
+}
 
 const buyAssetSchema = z.object({
   symbol: z
@@ -29,8 +52,6 @@ export async function POST(req: Request) {
 
   try {
     const body = await req.json();
-
-    // Validate with Zod
     const validation = buyAssetSchema.safeParse(body);
 
     if (!validation.success) {
@@ -45,118 +66,152 @@ export async function POST(req: Request) {
 
     const { symbol, name, price, shares } = validation.data;
 
-    const totalCost = price * shares;
+    const result = await prisma.$transaction(
+      async (tx) => {
+        const pricePerShare = USD(price);
+        const totalCost = pricePerShare.multiply(shares);
 
-    const latestWalletBalance = await prisma.walletBalance.findFirst({
-      where: { userId: user.id },
-      orderBy: { date: "desc" },
+        // Get and lock wallet balance to prevent race conditions
+        const latestWalletBalance = await tx.walletBalance.findFirst({
+          where: { userId: user.id },
+          orderBy: { date: "desc" },
+        });
+
+        if (!latestWalletBalance) {
+          throw new WalletNotFoundError();
+        }
+
+        const availableBalance = USD(latestWalletBalance.balance);
+
+        if (availableBalance.value < totalCost.value) {
+          const shortfall = totalCost.subtract(availableBalance);
+          throw new InsufficientFundsError(
+            totalCost.value,
+            availableBalance.value,
+            shortfall.value
+          );
+        }
+
+        // Handle position update/creation
+        const existingPosition = await tx.position.findFirst({
+          where: { userId: user.id, symbol },
+        });
+
+        if (existingPosition) {
+          const existingAvgPrice = USD(existingPosition.avgPrice);
+          const existingShares = existingPosition.shares;
+          const totalShares = existingShares + shares;
+
+          const existingValue = existingAvgPrice.multiply(existingShares);
+          const totalValue = existingValue.add(totalCost);
+          const newAvgPrice = totalValue.divide(totalShares);
+
+          await tx.position.update({
+            where: { id: existingPosition.id },
+            data: {
+              shares: totalShares,
+              avgPrice: newAvgPrice.value,
+              currentPrice: pricePerShare.value,
+            },
+          });
+        } else {
+          await tx.position.create({
+            data: {
+              userId: user.id,
+              symbol,
+              name,
+              shares,
+              avgPrice: pricePerShare.value,
+              currentPrice: pricePerShare.value,
+            },
+          });
+        }
+
+        // Update wallet balance
+        const newWalletBalance = availableBalance.subtract(totalCost);
+        await tx.walletBalance.create({
+          data: {
+            userId: user.id,
+            balance: newWalletBalance.value,
+            date: new Date(),
+          },
+        });
+
+        // Update brokerage value
+        const latestBrokerageValue = await tx.brokerageValue.findFirst({
+          where: { userId: user.id },
+          orderBy: { date: "desc" },
+        });
+
+        const currentBrokerageValue = USD(latestBrokerageValue?.value || 0);
+        const newBrokerageValue = currentBrokerageValue.add(totalCost);
+
+        await tx.brokerageValue.create({
+          data: {
+            userId: user.id,
+            value: newBrokerageValue.value,
+            date: new Date(),
+          },
+        });
+
+        // Create transaction record
+        await tx.transaction.create({
+          data: {
+            userId: user.id,
+            type: "BUY",
+            symbol,
+            shares,
+            pricePerShare: pricePerShare.value,
+            amount: totalCost.value,
+            from: "WALLET",
+            to: "BROKERAGE",
+            description: `Bought ${shares} shares of ${symbol} at ${pricePerShare.format()} per share`,
+          },
+        });
+
+        return {
+          newWalletBalance: newWalletBalance.value,
+          newBrokerageValue: newBrokerageValue.value,
+          purchase: {
+            symbol,
+            shares,
+            pricePerShare: pricePerShare.value,
+            totalCost: totalCost.value,
+          },
+        };
+      },
+      {
+        maxWait: 5000, // 5 seconds max wait
+        timeout: 10000, // 10 seconds timeout
+        isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+      }
+    );
+
+    return NextResponse.json({
+      success: true,
+      ...result,
     });
+  } catch (error) {
+    console.error("Buy error:", error);
 
-    if (!latestWalletBalance) {
-      return NextResponse.json(
-        { error: "No wallet balance found. Please contact support." },
-        { status: 400 }
-      );
-    }
-
-    if (latestWalletBalance.balance < totalCost) {
+    if (error instanceof InsufficientFundsError) {
       return NextResponse.json(
         {
-          error: "Insufficient funds",
+          error: error.message,
           details: {
-            required: totalCost,
-            available: latestWalletBalance.balance,
-            shortfall: totalCost - latestWalletBalance.balance,
+            required: error.required,
+            available: error.available,
+            shortfall: error.shortfall,
           },
         },
         { status: 400 }
       );
     }
 
-    const existingPosition = await prisma.position.findFirst({
-      where: { userId: user.id, symbol },
-    });
-
-    if (existingPosition) {
-      const totalShares = existingPosition.shares + shares;
-      const totalValue =
-        existingPosition.avgPrice * existingPosition.shares + totalCost;
-      const newAvgPrice = totalValue / totalShares;
-
-      await prisma.position.update({
-        where: { id: existingPosition.id },
-        data: {
-          shares: totalShares,
-          avgPrice: newAvgPrice,
-          currentPrice: price,
-        },
-      });
-    } else {
-      await prisma.position.create({
-        data: {
-          userId: user.id,
-          symbol,
-          name,
-          shares,
-          avgPrice: price,
-          currentPrice: price,
-        },
-      });
+    if (error instanceof WalletNotFoundError) {
+      return NextResponse.json({ error: error.message }, { status: 400 });
     }
 
-    const newWalletBalance = latestWalletBalance.balance - totalCost;
-    await prisma.walletBalance.create({
-      data: {
-        userId: user.id,
-        balance: newWalletBalance,
-        date: new Date(),
-      },
-    });
-
-    const latestBrokerageValue = await prisma.brokerageValue.findFirst({
-      where: { userId: user.id },
-      orderBy: { date: "desc" },
-    });
-
-    const newBrokerageValue = (latestBrokerageValue?.value || 0) + totalCost;
-    await prisma.brokerageValue.create({
-      data: {
-        userId: user.id,
-        value: newBrokerageValue,
-        date: new Date(),
-      },
-    });
-
-    // Create transaction record
-    await prisma.transaction.create({
-      data: {
-        userId: user.id,
-        type: "BUY",
-        symbol,
-        shares,
-        pricePerShare: price,
-        amount: totalCost,
-        from: "WALLET",
-        to: "BROKERAGE",
-        description: `Bought ${shares} shares of ${symbol} at $${price.toFixed(
-          2
-        )} per share`,
-      },
-    });
-
-    return NextResponse.json({
-      success: true,
-      newWalletBalance,
-      newBrokerageValue,
-      purchase: {
-        symbol,
-        shares,
-        pricePerShare: price,
-        totalCost,
-      },
-    });
-  } catch (error) {
-    console.error("Buy error:", error);
     return NextResponse.json(
       { error: "Internal server error" },
       { status: 500 }
