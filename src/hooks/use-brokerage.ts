@@ -59,7 +59,6 @@ export function useBrokerage() {
 
       const balances = (await res.json()) as WalletBalance[];
 
-      // Format dates for chart
       return balances.map((b) => ({
         ...b,
         date: new Date(b.date).toLocaleDateString("en-US", {
@@ -85,7 +84,6 @@ export function useBrokerage() {
 
       const values = (await res.json()) as BrokerageValue[];
 
-      // Format dates for chart
       return values.map((v) => ({
         ...v,
         date: new Date(v.date).toLocaleDateString("en-US", {
@@ -97,6 +95,7 @@ export function useBrokerage() {
     enabled: !!user,
   });
 
+  // Buy asset mutation
   const buyAsset = useMutation({
     mutationFn: async ({
       symbol,
@@ -115,17 +114,47 @@ export function useBrokerage() {
         body: JSON.stringify({ symbol, name, price, shares }),
         credentials: "include",
       });
-  
+
       const data = await res.json();
-  
+
       if (!res.ok) {
         throw new Error(data.error || "Failed to buy asset");
       }
-  
+
       return data;
     },
     onSuccess: () => {
-      // Invalidate and refetch
+      queryClient.invalidateQueries({ queryKey: ["positions"] });
+      queryClient.invalidateQueries({ queryKey: ["wallet-balances"] });
+      queryClient.invalidateQueries({ queryKey: ["brokerage-values"] });
+    },
+  });
+
+  // Sell position mutation
+  const sellPosition = useMutation({
+    mutationFn: async ({
+      positionId,
+      shares,
+    }: {
+      positionId: string;
+      shares: number;
+    }) => {
+      const res = await fetch("/api/sell", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ positionId, shares }),
+        credentials: "include",
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || "Failed to sell position");
+      }
+
+      return data;
+    },
+    onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["positions"] });
       queryClient.invalidateQueries({ queryKey: ["wallet-balances"] });
       queryClient.invalidateQueries({ queryKey: ["brokerage-values"] });
@@ -142,5 +171,7 @@ export function useBrokerage() {
       : null,
     buyAsset: (symbol: string, name: string, price: number, shares: number) =>
       buyAsset.mutate({ symbol, name, price, shares }),
+    sellPosition: (positionId: string, shares: number) =>
+      sellPosition.mutateAsync({ positionId, shares }),
   };
 }
