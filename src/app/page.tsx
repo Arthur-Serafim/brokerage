@@ -36,13 +36,13 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useMe } from "@/contexts/AuthContext";
 import { BuyAssetDialog } from "@/components/buy-asset-dialog";
 import { SellPositionDialog } from "@/components/sell-position-dialog";
-import { useState } from "react";
+import { useMemo } from "react";
 import currency from "currency.js";
 
 const COLORS = {
   wallet: "#3b82f6",
   brokerage: "#10b981",
-};
+} as const;
 
 interface Position {
   id: string;
@@ -53,14 +53,35 @@ interface Position {
   currentPrice: number;
 }
 
+const calculateChange = (
+  data: Array<{ balance?: number; value?: number }>,
+  key: "balance" | "value"
+) => {
+  if (data.length < 2) {
+    return { current: 0, change: 0, changePct: "0.00" };
+  }
+
+  const currentValue = currency(data[data.length - 1][key] || 0);
+  const previousValue = currency(data[data.length - 2][key] || 0);
+  const changeValue = currentValue.subtract(previousValue);
+
+  const changePercentage =
+    previousValue.value > 0
+      ? changeValue.divide(previousValue).multiply(100).format({ symbol: "" })
+      : "0.00";
+
+  return {
+    current: currentValue.value,
+    change: changeValue.value,
+    changePct: changePercentage,
+  };
+};
+
 export default function Home() {
   const { user: authUser, isLoading: authLoading } = useMe();
   const { user, buyAsset, sellPosition } = useBrokerage();
-  const [, setBuyDialog] = useQueryState("buy");
-  const [selectedPosition, setSelectedPosition] = useState<Position | null>(
-    null
-  );
-  const [sellDialogOpen, setSellDialogOpen] = useState(false);
+  const [, setDialogOperationType] = useQueryState("dialogOperationType");
+  const [positionId, setPositionId] = useQueryState("positionId");
 
   const handleBuyAsset = (
     symbol: string,
@@ -72,13 +93,103 @@ export default function Home() {
   };
 
   const handleSellClick = (position: Position) => {
-    setSelectedPosition(position);
-    setSellDialogOpen(true);
+    setPositionId(position.id);
+    setDialogOperationType("sell");
   };
 
   const handleSell = async (positionId: string, shares: number) => {
     await sellPosition(positionId, shares);
   };
+
+  // Memoize calculations
+  const portfolioMetrics = useMemo(() => {
+    if (!user) return null;
+
+    const walletBalances = user.walletBalances || [];
+    const brokerageValues = user.brokerageValues || [];
+    const positions = user.positions || [];
+
+    // Calculate wallet metrics
+    const walletMetrics = calculateChange(walletBalances, "balance");
+
+    // Calculate brokerage metrics
+    const brokerageMetrics = calculateChange(brokerageValues, "value");
+
+    // Calculate total portfolio
+    const totalPortfolio = currency(walletMetrics.current).add(
+      brokerageMetrics.current
+    );
+
+    // Calculate distribution
+    const walletPercentage =
+      totalPortfolio.value > 0
+        ? currency(walletMetrics.current)
+            .divide(totalPortfolio)
+            .multiply(100)
+            .format({ symbol: "" })
+        : "0.0";
+
+    const brokeragePercentage =
+      totalPortfolio.value > 0
+        ? currency(brokerageMetrics.current)
+            .divide(totalPortfolio)
+            .multiply(100)
+            .format({ symbol: "" })
+        : "0.0";
+
+    const distributionData = [
+      {
+        name: "Wallet",
+        value: walletMetrics.current,
+        percentage: walletPercentage,
+      },
+      {
+        name: "Brokerage",
+        value: brokerageMetrics.current,
+        percentage: brokeragePercentage,
+      },
+    ];
+
+    // Calculate P&L for positions
+    const positionsWithPnL = positions.map((position) => {
+      const avgPrice = currency(position.avgPrice);
+      const currentPrice = currency(position.currentPrice);
+      const shares = position.shares;
+
+      const totalCost = avgPrice.multiply(shares);
+      const currentValue = currentPrice.multiply(shares);
+      const profitAndLoss = currentValue.subtract(totalCost);
+
+      const profitAndLossPercentage =
+        totalCost.value > 0
+          ? profitAndLoss.divide(totalCost).multiply(100).format({ symbol: "" })
+          : "0.00";
+
+      return {
+        ...position,
+        pnl: profitAndLoss.value,
+        pnlPct: profitAndLossPercentage,
+        isProfitable: profitAndLoss.value >= 0,
+      };
+    });
+
+    return {
+      wallet: walletMetrics,
+      brokerage: brokerageMetrics,
+      totalPortfolio: totalPortfolio.value,
+      distributionData,
+      positions: positionsWithPnL,
+      hasData: walletBalances.length > 0 || brokerageValues.length > 0,
+    };
+  }, [user]);
+
+  const selectedPosition = useMemo(
+    () =>
+      portfolioMetrics?.positions.find(
+        (item) => item.id === positionId
+      ) as Position,
+    [positionId, portfolioMetrics]
+  );
 
   // Loading state
   if (authLoading) {
@@ -100,15 +211,15 @@ export default function Home() {
     );
   }
 
-  if (!authUser || !user) {
+  if (!authUser || !user || !portfolioMetrics) {
     return null;
   }
 
   const walletBalances = user.walletBalances || [];
   const brokerageValues = user.brokerageValues || [];
-  const positions = user.positions || [];
 
-  if (walletBalances.length === 0 && brokerageValues.length === 0) {
+  // Empty state
+  if (!portfolioMetrics.hasData) {
     return (
       <main className="max-w-7xl mx-auto p-6 md:p-10">
         <BuyAssetDialog onBuy={handleBuyAsset} />
@@ -121,7 +232,7 @@ export default function Home() {
           <p className="text-muted-foreground text-center mb-8 max-w-md">
             Start your investment journey by buying your first asset
           </p>
-          <Button size="lg" onClick={() => setBuyDialog("open")}>
+          <Button size="lg" onClick={() => setDialogOperationType("buy")}>
             <ShoppingCart className="mr-2 h-5 w-5" />
             Buy Your First Asset
           </Button>
@@ -130,75 +241,12 @@ export default function Home() {
     );
   }
 
-  // Calculations
-  const currentWalletBalance =
-    walletBalances.length > 0
-      ? walletBalances[walletBalances.length - 1].balance
-      : 0;
-  const walletChange =
-    walletBalances.length > 1
-      ? walletBalances[walletBalances.length - 1].balance -
-        walletBalances[walletBalances.length - 2].balance
-      : 0;
-  const walletChangePct =
-    walletBalances.length > 1 &&
-    walletBalances[walletBalances.length - 2].balance > 0
-      ? (
-          (walletChange / walletBalances[walletBalances.length - 2].balance) *
-          100
-        ).toFixed(2)
-      : "0.00";
-
-  const currentBrokerageValue =
-    brokerageValues.length > 0
-      ? brokerageValues[brokerageValues.length - 1].value
-      : 0;
-  const brokerageChange =
-    brokerageValues.length > 1
-      ? brokerageValues[brokerageValues.length - 1].value -
-        brokerageValues[brokerageValues.length - 2].value
-      : 0;
-  const brokerageChangePct =
-    brokerageValues.length > 1 &&
-    brokerageValues[brokerageValues.length - 2].value > 0
-      ? (
-          (brokerageChange /
-            brokerageValues[brokerageValues.length - 2].value) *
-          100
-        ).toFixed(2)
-      : "0.00";
-
-  const totalPortfolio = currentWalletBalance + currentBrokerageValue;
-
-  // Portfolio distribution data
-  const distributionData = [
-    {
-      name: "Wallet",
-      value: currentWalletBalance,
-      percentage:
-        totalPortfolio > 0
-          ? ((currentWalletBalance / totalPortfolio) * 100).toFixed(1)
-          : "0",
-    },
-    {
-      name: "Brokerage",
-      value: currentBrokerageValue,
-      percentage:
-        totalPortfolio > 0
-          ? ((currentBrokerageValue / totalPortfolio) * 100).toFixed(1)
-          : "0",
-    },
-  ];
-
   return (
     <main className="max-w-7xl mx-auto p-6 md:p-10 space-y-6">
       <BuyAssetDialog onBuy={handleBuyAsset} />
-      <SellPositionDialog
-        position={selectedPosition}
-        open={sellDialogOpen}
-        onOpenChange={setSellDialogOpen}
-        onSell={handleSell}
-      />
+      <SellPositionDialog position={selectedPosition} onSell={handleSell} />
+
+      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight">Dashboard</h1>
@@ -206,11 +254,13 @@ export default function Home() {
             Track your portfolio performance
           </p>
         </div>
-        <Button onClick={() => setBuyDialog("open")}>
+        <Button onClick={() => setDialogOperationType("buy")}>
           <ShoppingCart className="mr-2 h-4 w-4" />
           Buy Assets
         </Button>
       </div>
+
+      {/* Total Portfolio Card */}
       <Card>
         <CardHeader>
           <div className="flex items-center gap-2">
@@ -223,7 +273,7 @@ export default function Home() {
             <div className="space-y-6">
               <div>
                 <div className="text-4xl font-bold mb-2">
-                  {currency(totalPortfolio).format()}
+                  {currency(portfolioMetrics.totalPortfolio).format()}
                 </div>
                 <p className="text-sm text-muted-foreground">
                   Total portfolio value
@@ -240,13 +290,14 @@ export default function Home() {
                     <div>
                       <p className="font-medium">Wallet Balance</p>
                       <p className="text-sm text-muted-foreground">
-                        {distributionData[0].percentage}% of portfolio
+                        {portfolioMetrics.distributionData[0].percentage}% of
+                        portfolio
                       </p>
                     </div>
                   </div>
                   <div className="text-right">
                     <p className="font-semibold">
-                      {currency(currentWalletBalance).format()}
+                      {currency(portfolioMetrics.wallet.current).format()}
                     </p>
                   </div>
                 </div>
@@ -260,13 +311,14 @@ export default function Home() {
                     <div>
                       <p className="font-medium">Brokerage Value</p>
                       <p className="text-sm text-muted-foreground">
-                        {distributionData[1].percentage}% of portfolio
+                        {portfolioMetrics.distributionData[1].percentage}% of
+                        portfolio
                       </p>
                     </div>
                   </div>
                   <div className="text-right">
                     <p className="font-semibold">
-                      {currency(currentBrokerageValue).format()}
+                      {currency(portfolioMetrics.brokerage.current).format()}
                     </p>
                   </div>
                 </div>
@@ -274,11 +326,11 @@ export default function Home() {
             </div>
 
             <div className="flex items-center justify-center">
-              {totalPortfolio > 0 ? (
+              {portfolioMetrics.totalPortfolio > 0 ? (
                 <ResponsiveContainer width="100%" height={280}>
                   <PieChart>
                     <Pie
-                      data={distributionData}
+                      data={portfolioMetrics.distributionData}
                       cx="50%"
                       cy="50%"
                       innerRadius={60}
@@ -315,19 +367,19 @@ export default function Home() {
               {walletBalances.length > 1 && (
                 <div
                   className={`flex items-center gap-1 text-sm font-medium ${
-                    Number(walletChangePct) >= 0
+                    Number(portfolioMetrics.wallet.changePct) >= 0
                       ? "text-green-600"
                       : "text-red-600"
                   }`}
                 >
-                  {Number(walletChangePct) >= 0 ? (
+                  {Number(portfolioMetrics.wallet.changePct) >= 0 ? (
                     <TrendingUp className="h-4 w-4" />
                   ) : (
                     <TrendingDown className="h-4 w-4" />
                   )}
                   <span>
-                    {Number(walletChangePct) >= 0 ? "+" : ""}
-                    {walletChangePct}%
+                    {Number(portfolioMetrics.wallet.changePct) >= 0 ? "+" : ""}
+                    {portfolioMetrics.wallet.changePct}%
                   </span>
                 </div>
               )}
@@ -335,7 +387,7 @@ export default function Home() {
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold mb-6">
-              {currency(currentWalletBalance).format()}
+              {currency(portfolioMetrics.wallet.current).format()}
             </div>
             {walletBalances.length > 0 ? (
               <ResponsiveContainer width="100%" height={200}>
@@ -393,8 +445,6 @@ export default function Home() {
             )}
           </CardContent>
         </Card>
-
-        {/* Brokerage Value Chart */}
         <Card>
           <CardHeader>
             <div className="flex items-center justify-between">
@@ -405,19 +455,21 @@ export default function Home() {
               {brokerageValues.length > 1 && (
                 <div
                   className={`flex items-center gap-1 text-sm font-medium ${
-                    Number(brokerageChangePct) >= 0
+                    Number(portfolioMetrics.brokerage.changePct) >= 0
                       ? "text-green-600"
                       : "text-red-600"
                   }`}
                 >
-                  {Number(brokerageChangePct) >= 0 ? (
+                  {Number(portfolioMetrics.brokerage.changePct) >= 0 ? (
                     <TrendingUp className="h-4 w-4" />
                   ) : (
                     <TrendingDown className="h-4 w-4" />
                   )}
                   <span>
-                    {Number(brokerageChangePct) >= 0 ? "+" : ""}
-                    {brokerageChangePct}%
+                    {Number(portfolioMetrics.brokerage.changePct) >= 0
+                      ? "+"
+                      : ""}
+                    {portfolioMetrics.brokerage.changePct}%
                   </span>
                 </div>
               )}
@@ -425,7 +477,7 @@ export default function Home() {
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold mb-6">
-              {currency(currentBrokerageValue).format()}
+              {currency(portfolioMetrics.brokerage.current).format()}
             </div>
             {brokerageValues.length > 0 ? (
               <ResponsiveContainer width="100%" height={200}>
@@ -490,7 +542,7 @@ export default function Home() {
           <CardTitle className="text-lg">Your Positions</CardTitle>
         </CardHeader>
         <CardContent>
-          {positions.length === 0 ? (
+          {portfolioMetrics.positions.length === 0 ? (
             <div className="text-center py-16">
               <div className="rounded-full bg-muted/50 p-6 w-20 h-20 mx-auto mb-4 flex items-center justify-center">
                 <LineChartIcon className="h-10 w-10 text-muted-foreground" />
@@ -499,7 +551,7 @@ export default function Home() {
               <p className="text-muted-foreground mb-6">
                 Start investing by buying your first asset
               </p>
-              <Button onClick={() => setBuyDialog("open")}>
+              <Button onClick={() => setDialogOperationType("buy")}>
                 <ShoppingCart className="mr-2 h-4 w-4" />
                 Buy Your First Asset
               </Button>
@@ -519,58 +571,53 @@ export default function Home() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {positions.map((p) => {
-                    const pnl = (p.currentPrice - p.avgPrice) * p.shares;
-                    const pnlPct = (
-                      (pnl / (p.avgPrice * p.shares)) *
-                      100
-                    ).toFixed(2);
-                    const isProfitable = pnl >= 0;
-
-                    return (
-                      <TableRow key={p.id}>
-                        <TableCell className="font-medium">
-                          {p.symbol}
-                        </TableCell>
-                        <TableCell className="text-muted-foreground">
-                          {p.name}
-                        </TableCell>
-                        <TableCell className="text-right">{p.shares}</TableCell>
-                        <TableCell className="text-right text-muted-foreground">
-                          {currency(p.avgPrice).format()}
-                        </TableCell>
-                        <TableCell className="text-right font-medium">
-                          {currency(p.currentPrice).format()}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <div
-                            className={`inline-flex flex-col items-end ${
-                              isProfitable ? "text-green-600" : "text-red-600"
-                            }`}
-                          >
-                            <span className="font-semibold">
-                              {isProfitable ? "+" : ""}
-                              {currency(pnl).format()}
-                            </span>
-                            <span className="text-xs">
-                              {isProfitable ? "+" : ""}
-                              {pnlPct}%
-                            </span>
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-right">
-                          <Button
-                            variant="outline"
-                            size="sm"
-                            onClick={() => handleSellClick(p)}
-                          >
-                            <TrendingDown className="h-4 w-4 mr-1" />
-                            Sell
-                          </Button>
-                        </TableCell>
-                      </TableRow>
-                    );
-                  })}
+                  {portfolioMetrics.positions.map((position) => (
+                    <TableRow key={position.id}>
+                      <TableCell className="font-medium">
+                        {position.symbol}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {position.name}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        {position.shares}
+                      </TableCell>
+                      <TableCell className="text-right text-muted-foreground">
+                        {currency(position.avgPrice).format()}
+                      </TableCell>
+                      <TableCell className="text-right font-medium">
+                        {currency(position.currentPrice).format()}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <div
+                          className={`inline-flex flex-col items-end ${
+                            position.isProfitable
+                              ? "text-green-600"
+                              : "text-red-600"
+                          }`}
+                        >
+                          <span className="font-semibold">
+                            {position.isProfitable ? "+" : ""}
+                            {currency(position.pnl).format()}
+                          </span>
+                          <span className="text-xs">
+                            {position.isProfitable ? "+" : ""}
+                            {position.pnlPct}%
+                          </span>
+                        </div>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          onClick={() => handleSellClick(position)}
+                        >
+                          <TrendingDown className="h-4 w-4 mr-1" />
+                          Sell
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
                 </TableBody>
               </Table>
             </div>

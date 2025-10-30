@@ -55,11 +55,9 @@ interface BuyAssetDialogProps {
 }
 
 export function BuyAssetDialog({ onBuy }: BuyAssetDialogProps) {
-  const [buyDialog, setBuyDialog] = useQueryState("buy", {
-    defaultValue: "",
-    parse: (value) => value || "",
-    serialize: (value) => value || "",
-  });
+  const [dialogOperationType, setDialogOperationType] = useQueryState(
+    "dialogOperationType"
+  );
 
   const { data: symbolsData, isLoading, isError } = useSymbols();
   const { user } = useBrokerage();
@@ -74,7 +72,7 @@ export function BuyAssetDialog({ onBuy }: BuyAssetDialogProps) {
     },
   });
 
-  const isOpen = buyDialog === "open";
+  const isOpen = dialogOperationType === "buy";
   const selectedSymbol = form.watch("symbol");
   const shares = form.watch("shares");
 
@@ -85,9 +83,9 @@ export function BuyAssetDialog({ onBuy }: BuyAssetDialogProps) {
 
   const handleOpenChange = (open: boolean) => {
     if (open) {
-      setBuyDialog("open");
+      setDialogOperationType("buy");
     } else {
-      setBuyDialog(null);
+      setDialogOperationType(null);
       form.reset();
       setPurchaseError(null);
     }
@@ -119,12 +117,16 @@ export function BuyAssetDialog({ onBuy }: BuyAssetDialogProps) {
       );
 
       // Close dialog and reset
-      setBuyDialog(null);
+      setDialogOperationType(null);
       form.reset();
-    } catch (error: any) {
-      setPurchaseError(
-        error.message || "Failed to complete purchase. Please try again."
-      );
+    } catch (error) {
+      if (error instanceof Error) {
+        setPurchaseError(error.message);
+      } else if (typeof error === "string") {
+        setPurchaseError(error);
+      } else {
+        setPurchaseError("Failed to complete purchase. Please try again.");
+      }
     } finally {
       setIsSubmitting(false);
     }
