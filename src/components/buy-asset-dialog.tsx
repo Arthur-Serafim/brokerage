@@ -171,7 +171,7 @@ export function BuyAssetDialog({ onBuy }: BuyAssetDialogProps) {
                     disabled={isLoading || isError}
                   >
                     <FormControl>
-                      <SelectTrigger>
+                      <SelectTrigger className="w-full">
                         <SelectValue placeholder="Select a symbol" />
                       </SelectTrigger>
                     </FormControl>

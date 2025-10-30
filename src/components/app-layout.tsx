@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import {
   Sidebar,
   SidebarContent,
@@ -14,12 +14,23 @@ import {
   SidebarHeader,
   SidebarFooter,
 } from "@/components/ui/sidebar";
-import { Wallet } from "lucide-react";
+import { Wallet, LogOut, History } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { AuthProvider, useMe } from "@/contexts/AuthContext";
+import { useQueryClient } from "@tanstack/react-query";
 
 function DashboardContent({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const router = useRouter();
+  const queryClient = useQueryClient();
   const { user, isLoading } = useMe();
+
+  const handleLogout = async () => {
+    await fetch("/api/logout", { method: "POST" });
+    queryClient.clear();
+    router.push("/login");
+    router.refresh();
+  };
 
   if (isLoading) {
     return (
@@ -29,7 +40,6 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
     );
   }
 
-  // If not loading and no user, AuthProvider will redirect to /login
   if (!user) {
     return null;
   }
@@ -42,14 +52,28 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
         </SidebarHeader>
         <SidebarContent>
           <SidebarGroup>
-            <SidebarGroupLabel>Banking</SidebarGroupLabel>
+            <SidebarGroupLabel>Portfolio</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
-                <SidebarMenuItem key="/">
+                <SidebarMenuItem>
                   <SidebarMenuButton asChild isActive={pathname === "/"}>
                     <Link href="/" className="flex items-center gap-2">
                       <Wallet size={18} />
-                      Wallet
+                      Dashboard
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    asChild
+                    isActive={pathname === "/transactions"}
+                  >
+                    <Link
+                      href="/transactions"
+                      className="flex items-center gap-2"
+                    >
+                      <History size={18} />
+                      Transactions
                     </Link>
                   </SidebarMenuButton>
                 </SidebarMenuItem>
@@ -58,16 +82,25 @@ function DashboardContent({ children }: { children: React.ReactNode }) {
           </SidebarGroup>
         </SidebarContent>
         <SidebarFooter className="p-4">
-          <div className="text-xs text-muted-foreground">
-            <p className="mb-2">Logged in as:</p>
+          <div className="text-xs text-muted-foreground mb-2">
+            <p className="mb-1">Logged in as:</p>
             <p className="font-medium">{user.email}</p>
           </div>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleLogout}
+            className="w-full justify-start gap-2"
+          >
+            <LogOut size={16} />
+            Logout
+          </Button>
           <p className="text-xs text-muted-foreground mt-4">
             © 2025 Marketstack
           </p>
         </SidebarFooter>
       </Sidebar>
-      <main className="flex-1 p-6">{children}</main>
+      <main className="flex-1">{children}</main>
     </div>
   );
 }

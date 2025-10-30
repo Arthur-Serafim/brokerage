@@ -12,7 +12,6 @@ export async function POST(req: Request) {
   try {
     const { positionId, shares } = await req.json();
 
-    // Validate input
     if (!positionId || !shares || shares <= 0) {
       return NextResponse.json({ error: "Invalid input" }, { status: 400 });
     }
@@ -24,7 +23,6 @@ export async function POST(req: Request) {
       );
     }
 
-    // Get the position
     const position = await prisma.position.findUnique({
       where: { id: positionId },
     });
@@ -36,7 +34,6 @@ export async function POST(req: Request) {
       );
     }
 
-    // Validate sufficient shares
     if (position.shares < shares) {
       return NextResponse.json(
         {
@@ -50,17 +47,13 @@ export async function POST(req: Request) {
       );
     }
 
-    // Calculate sale value (using current price)
     const saleValue = position.currentPrice * shares;
 
-    // Update or delete position
     if (position.shares === shares) {
-      // Sell all shares - delete position
       await prisma.position.delete({
         where: { id: positionId },
       });
     } else {
-      // Partial sell - update position
       await prisma.position.update({
         where: { id: positionId },
         data: {
@@ -69,7 +62,6 @@ export async function POST(req: Request) {
       });
     }
 
-    // Get current wallet balance
     const latestWalletBalance = await prisma.walletBalance.findFirst({
       where: { userId: user.id },
       orderBy: { date: "desc" },
@@ -82,7 +74,6 @@ export async function POST(req: Request) {
       );
     }
 
-    // Update wallet balance (increase)
     const newWalletBalance = latestWalletBalance.balance + saleValue;
     await prisma.walletBalance.create({
       data: {
@@ -92,13 +83,11 @@ export async function POST(req: Request) {
       },
     });
 
-    // Get current brokerage value
     const latestBrokerageValue = await prisma.brokerageValue.findFirst({
       where: { userId: user.id },
       orderBy: { date: "desc" },
     });
 
-    // Update brokerage value (decrease)
     const newBrokerageValue = Math.max(
       0,
       (latestBrokerageValue?.value || 0) - saleValue
@@ -108,6 +97,21 @@ export async function POST(req: Request) {
         userId: user.id,
         value: newBrokerageValue,
         date: new Date(),
+      },
+    });
+
+    // Create transaction record
+    await prisma.transaction.create({
+      data: {
+        userId: user.id,
+        type: "SELL",
+        symbol: position.symbol,
+        shares,
+        pricePerShare: position.currentPrice,
+        amount: saleValue,
+        from: "BROKERAGE",
+        to: "WALLET",
+        description: `Sold ${shares} shares of ${position.symbol} at $${position.currentPrice.toFixed(2)} per share`,
       },
     });
 

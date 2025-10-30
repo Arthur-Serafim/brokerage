@@ -15,6 +15,7 @@ model User {
   walletBalances  WalletBalance[]
   brokerageValues BrokerageValue[]
   positions       Position[]
+  transactions    Transaction[]
 }
 
 model Position {
@@ -50,4 +51,19 @@ model Symbol {
   name      String
   price     Float
   updatedAt DateTime @updatedAt
+}
+
+model Transaction {
+  id          String   @id @default(uuid())
+  type        String   // "BUY" | "SELL" | "DEPOSIT" | "WITHDRAWAL"
+  symbol      String?  // Stock symbol (null for deposits/withdrawals)
+  shares      Int?     // Number of shares (null for deposits/withdrawals)
+  pricePerShare Float? // Price per share (null for deposits/withdrawals)
+  amount      Float    // Total amount
+  from        String   // "WALLET" | "BROKERAGE" | "EXTERNAL"
+  to          String   // "WALLET" | "BROKERAGE" | "EXTERNAL"
+  description String
+  createdAt   DateTime @default(now())
+  user        User     @relation(fields: [userId], references: [id])
+  userId      String
 }

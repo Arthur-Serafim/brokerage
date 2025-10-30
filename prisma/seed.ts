@@ -10,6 +10,7 @@ async function main() {
 
   // Delete existing data for fresh seed
   console.log("🗑️  Cleaning existing data...");
+  await prisma.transaction.deleteMany();
   await prisma.position.deleteMany();
   await prisma.brokerageValue.deleteMany();
   await prisma.walletBalance.deleteMany();
@@ -49,7 +50,7 @@ async function main() {
   const now = new Date();
   const initialBalance = 100000;
   const walletBalances = [];
-  
+
   for (let i = 6; i >= 0; i--) {
     const balance = initialBalance - i * 2000; // Decreasing from 100k to 88k
     walletBalances.push({
@@ -62,7 +63,7 @@ async function main() {
   await prisma.walletBalance.createMany({
     data: walletBalances,
   });
-  
+
   const currentBalance = walletBalances[walletBalances.length - 1].balance;
   console.log(`✅ Created ${walletBalances.length} wallet balance entries`);
   console.log(`   Starting: $${initialBalance.toLocaleString()}`);
@@ -71,7 +72,7 @@ async function main() {
   // Create brokerage value history (7 days)
   console.log("📊 Creating brokerage value history...");
   const brokerageValues = [];
-  
+
   for (let i = 6; i >= 0; i--) {
     brokerageValues.push({
       userId: user.id,
@@ -83,8 +84,9 @@ async function main() {
   await prisma.brokerageValue.createMany({
     data: brokerageValues,
   });
-  
-  const currentBrokerageValue = brokerageValues[brokerageValues.length - 1].value;
+
+  const currentBrokerageValue =
+    brokerageValues[brokerageValues.length - 1].value;
   console.log(`✅ Created ${brokerageValues.length} brokerage value entries`);
   console.log(`   Current value: $${currentBrokerageValue.toLocaleString()}`);
 
@@ -120,24 +122,90 @@ async function main() {
   await prisma.position.createMany({
     data: positions,
   });
-  
+
   console.log(`✅ Created ${positions.length} positions`);
-  positions.forEach(p => {
+  positions.forEach((p) => {
     const value = p.shares * p.currentPrice;
-    console.log(`   ${p.symbol}: ${p.shares} shares = $${value.toLocaleString()}`);
+    console.log(
+      `   ${p.symbol}: ${p.shares} shares = $${value.toLocaleString()}`
+    );
   });
 
+  // Create sample transactions
+  console.log("💳 Creating sample transactions...");
+  const sampleTransactions = [
+    {
+      userId: user.id,
+      type: "DEPOSIT",
+      amount: 100000,
+      from: "EXTERNAL",
+      to: "WALLET",
+      description: "Initial deposit",
+      createdAt: new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000),
+    },
+    {
+      userId: user.id,
+      type: "BUY",
+      symbol: "AAPL",
+      shares: 10,
+      pricePerShare: 175.5,
+      amount: 1755,
+      from: "WALLET",
+      to: "BROKERAGE",
+      description: "Bought 10 shares of AAPL at $175.50 per share",
+      createdAt: new Date(now.getTime() - 6 * 24 * 60 * 60 * 1000),
+    },
+    {
+      userId: user.id,
+      type: "BUY",
+      symbol: "TSLA",
+      shares: 5,
+      pricePerShare: 240.0,
+      amount: 1200,
+      from: "WALLET",
+      to: "BROKERAGE",
+      description: "Bought 5 shares of TSLA at $240.00 per share",
+      createdAt: new Date(now.getTime() - 4 * 24 * 60 * 60 * 1000),
+    },
+    {
+      userId: user.id,
+      type: "BUY",
+      symbol: "NVDA",
+      shares: 3,
+      pricePerShare: 450.0,
+      amount: 1350,
+      from: "WALLET",
+      to: "BROKERAGE",
+      description: "Bought 3 shares of NVDA at $450.00 per share",
+      createdAt: new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000),
+    },
+  ];
+
+  await prisma.transaction.createMany({
+    data: sampleTransactions,
+  });
+  console.log(
+    `✅ Created ${sampleTransactions.length} sample transactions`
+  );
+
   console.log("\n✅ Seeding complete!");
-  console.log("=" .repeat(50));
+  console.log("=".repeat(50));
   console.log("📧 Login credentials:");
   console.log("   Email:    test@example.com");
   console.log("   Password: password123");
-  console.log("=" .repeat(50));
+  console.log("=".repeat(50));
   console.log("💰 Portfolio Summary:");
   console.log(`   Wallet Balance:    $${currentBalance.toLocaleString()}`);
-  console.log(`   Brokerage Value:   $${currentBrokerageValue.toLocaleString()}`);
-  console.log(`   Total Portfolio:   $${(currentBalance + currentBrokerageValue).toLocaleString()}`);
-  console.log("=" .repeat(50));
+  console.log(
+    `   Brokerage Value:   $${currentBrokerageValue.toLocaleString()}`
+  );
+  console.log(
+    `   Total Portfolio:   $${(currentBalance + currentBrokerageValue).toLocaleString()}`
+  );
+  console.log("=".repeat(50));
+  console.log("💳 Transactions:");
+  console.log(`   Total Transactions: ${sampleTransactions.length}`);
+  console.log("=".repeat(50));
 }
 
 main()

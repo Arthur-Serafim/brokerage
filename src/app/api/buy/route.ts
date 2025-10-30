@@ -12,7 +12,6 @@ export async function POST(req: Request) {
   try {
     const { symbol, name, price, shares } = await req.json();
 
-    // Validate input
     if (!symbol || !name || !price || !shares || shares <= 0) {
       return NextResponse.json({ error: "Invalid input" }, { status: 400 });
     }
@@ -26,7 +25,6 @@ export async function POST(req: Request) {
 
     const totalCost = price * shares;
 
-    // Get current wallet balance
     const latestWalletBalance = await prisma.walletBalance.findFirst({
       where: { userId: user.id },
       orderBy: { date: "desc" },
@@ -39,7 +37,6 @@ export async function POST(req: Request) {
       );
     }
 
-    // CRITICAL: Validate sufficient funds
     if (latestWalletBalance.balance < totalCost) {
       return NextResponse.json(
         {
@@ -54,13 +51,11 @@ export async function POST(req: Request) {
       );
     }
 
-    // Check if position exists
     const existingPosition = await prisma.position.findFirst({
       where: { userId: user.id, symbol },
     });
 
     if (existingPosition) {
-      // Update existing position
       const totalShares = existingPosition.shares + shares;
       const totalValue =
         existingPosition.avgPrice * existingPosition.shares + totalCost;
@@ -75,7 +70,6 @@ export async function POST(req: Request) {
         },
       });
     } else {
-      // Create new position
       await prisma.position.create({
         data: {
           userId: user.id,
@@ -88,7 +82,6 @@ export async function POST(req: Request) {
       });
     }
 
-    // Update wallet balance (decrease)
     const newWalletBalance = latestWalletBalance.balance - totalCost;
     await prisma.walletBalance.create({
       data: {
@@ -98,19 +91,32 @@ export async function POST(req: Request) {
       },
     });
 
-    // Get current brokerage value
     const latestBrokerageValue = await prisma.brokerageValue.findFirst({
       where: { userId: user.id },
       orderBy: { date: "desc" },
     });
 
-    // Update brokerage value (increase)
     const newBrokerageValue = (latestBrokerageValue?.value || 0) + totalCost;
     await prisma.brokerageValue.create({
       data: {
         userId: user.id,
         value: newBrokerageValue,
         date: new Date(),
+      },
+    });
+
+    // Create transaction record
+    await prisma.transaction.create({
+      data: {
+        userId: user.id,
+        type: "BUY",
+        symbol,
+        shares,
+        pricePerShare: price,
+        amount: totalCost,
+        from: "WALLET",
+        to: "BROKERAGE",
+        description: `Bought ${shares} shares of ${symbol} at $${price.toFixed(2)} per share`,
       },
     });
 
