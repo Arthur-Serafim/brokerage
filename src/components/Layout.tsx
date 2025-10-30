@@ -14,17 +14,25 @@ import {
   SidebarHeader,
   SidebarFooter,
 } from "@/components/ui/sidebar";
-import { Home, Globe, Coins, Building } from "lucide-react";
+import { Wallet } from "lucide-react";
+import { AuthProvider, useMe } from "@/contexts/AuthContext";
 
-const routes = [
-  { href: "/tickers", label: "Tickers", icon: Home },
-  { href: "/exchanges", label: "Exchanges", icon: Building },
-  { href: "/currencies", label: "Currencies", icon: Coins },
-  { href: "/timezones", label: "Timezones", icon: Globe },
-];
-
-export default function Layout({ children }: { children: React.ReactNode }) {
+function DashboardContent({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const { user, isLoading } = useMe();
+
+  if (isLoading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <p>Loading...</p>
+      </div>
+    );
+  }
+
+  // If not loading and no user, AuthProvider will redirect to /login
+  if (!user) {
+    return null;
+  }
 
   return (
     <div className="flex min-h-screen w-full">
@@ -34,28 +42,40 @@ export default function Layout({ children }: { children: React.ReactNode }) {
         </SidebarHeader>
         <SidebarContent>
           <SidebarGroup>
-            <SidebarGroupLabel>Brokerage</SidebarGroupLabel>
+            <SidebarGroupLabel>Banking</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
-                {routes.map(({ href, label, icon: Icon }) => (
-                  <SidebarMenuItem key={href}>
-                    <SidebarMenuButton asChild isActive={pathname === href}>
-                      <Link href={href} className="flex items-center gap-2">
-                        <Icon size={18} />
-                        {label}
-                      </Link>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))}
+                <SidebarMenuItem key="/">
+                  <SidebarMenuButton asChild isActive={pathname === "/"}>
+                    <Link href="/" className="flex items-center gap-2">
+                      <Wallet size={18} />
+                      Wallet
+                    </Link>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
               </SidebarMenu>
             </SidebarGroupContent>
           </SidebarGroup>
         </SidebarContent>
-        <SidebarFooter className="p-4 text-xs text-muted-foreground">
-          © 2025 Marketstack
+        <SidebarFooter className="p-4">
+          <div className="text-xs text-muted-foreground">
+            <p className="mb-2">Logged in as:</p>
+            <p className="font-medium">{user.email}</p>
+          </div>
+          <p className="text-xs text-muted-foreground mt-4">
+            © 2025 Marketstack
+          </p>
         </SidebarFooter>
       </Sidebar>
       <main className="flex-1 p-6">{children}</main>
     </div>
+  );
+}
+
+export default function Layout({ children }: { children: React.ReactNode }) {
+  return (
+    <AuthProvider>
+      <DashboardContent>{children}</DashboardContent>
+    </AuthProvider>
   );
 }
