@@ -83,8 +83,8 @@ export function SellPositionDialog({
     if (!newOpen) {
       form.reset();
       setSellError(null);
-      setDialogOperationType("");
-      setPositionId("");
+      setDialogOperationType(null);
+      setPositionId(null);
     } else {
       setDialogOperationType("sell");
     }
